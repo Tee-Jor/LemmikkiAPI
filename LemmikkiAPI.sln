@@ -1,0 +1,24 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.5.2.0
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LemmikkiAPI", "LemmikkiAPI.csproj", "{FB4D132F-E146-3F5B-A12D-1F266BFC3EEB}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{FB4D132F-E146-3F5B-A12D-1F266BFC3EEB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{FB4D132F-E146-3F5B-A12D-1F266BFC3EEB}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{FB4D132F-E146-3F5B-A12D-1F266BFC3EEB}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{FB4D132F-E146-3F5B-A12D-1F266BFC3EEB}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {0D7F45E5-34F1-43B1-A66A-AAA850B64FF9}
+	EndGlobalSection
+EndGlobal
