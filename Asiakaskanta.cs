@@ -1,0 +1,356 @@
+namespace LemmikkiAPI;
+
+using Microsoft.Data.Sqlite;
+
+/// <summary>
+/// DataBase-luokka hallinnoi SQLite-tietokantaa ja tarjoaa metodeja
+/// omistajien ja lemmikkien lisäämiseen, päivittämiseen ja hakemiseen.
+/// </summary>
+public class Asiakaskanta
+{
+    // Yhteysmerkkijono SQLite-tietokantaan. Tämä kertoo ohjelmalle, missä
+    // tietokantatiedosto sijaitsee ja mikä sen nimi on.
+    private static string _connectionString = "Data Source=Data.db";
+
+    /// <summary>
+    /// Konstruktori, joka alustaa tietokannan ja luo tarvittavat taulut, jos niitä ei ole.
+    /// Tämä mahdollistaa ohjelman ajamisen ensimmäistä kertaa ilman valmiita tietokantoja.
+    /// </summary>
+    public Asiakaskanta()
+    {
+        // "using" varmistaa, että yhteys suljetaan automaattisesti lohkon lopussa,
+        // vaikka poikkeus tapahtuisi.
+        using (var connection = new SqliteConnection(_connectionString))
+        {
+            connection.Open();
+
+            // Luodaan Omistaja-taulu, jos sitä ei ole olemassa.
+            // PRIMARY KEY määrittää Omistajan_id:n yksilölliseksi tunnisteeksi.
+            var createOmistajaTableCmd = connection.CreateCommand();
+            createOmistajaTableCmd.CommandText = @"
+                CREATE TABLE IF NOT EXISTS Omistaja (
+                    Omistajan_id INTEGER PRIMARY KEY,
+                    Puhelin TEXT,
+                    Osoite TEXT,
+                    Nimi TEXT
+                )";
+            createOmistajaTableCmd.ExecuteNonQuery();
+
+            // Luodaan Lemmikki-taulu, jos sitä ei ole olemassa.
+            // FOREIGN KEY varmistaa, että jokaisella lemmikillä on olemassa oleva omistaja.
+            var createLemmikkiTableCmd = connection.CreateCommand();
+            createLemmikkiTableCmd.CommandText = @"
+                CREATE TABLE IF NOT EXISTS Lemmikki(
+                    Lemmikin_id INTEGER PRIMARY KEY,
+                    Omistajan_id INTEGER,
+                    Nimi TEXT,
+                    Laji TEXT,
+                    FOREIGN KEY (Omistajan_id) REFERENCES Omistaja(Omistajan_id)
+                )";
+            createLemmikkiTableCmd.ExecuteNonQuery();
+        }
+    }
+
+    /// <summary>
+    /// Lisää uuden omistajan tietokantaan.
+    /// Tarkistaa ensin, ettei samalla puhelinnumerolla ole jo olemassa olevaa omistajaa.
+    /// </summary>
+    public void AddOwner()
+    {
+        // Käyttäjältä kysytään omistajan tiedot.
+        Console.WriteLine("Anna omistajan nimi:");
+        string? nimi = Console.ReadLine();
+        Console.WriteLine("Anna puhelin numero:");
+        string? puhelin = Console.ReadLine();
+        Console.WriteLine("Anna osoite:");
+        string? osoite = Console.ReadLine();
+
+        // Tarkistetaan, että kaikki kentät on täytetty.
+        if (string.IsNullOrEmpty(nimi) || string.IsNullOrEmpty(puhelin) || string.IsNullOrEmpty(osoite))
+        {
+            Console.WriteLine("Anna tiedot joka kentälle, kiitos.");
+            return;
+        }
+
+        using (var connection = new SqliteConnection(_connectionString))
+        {
+            connection.Open();
+
+            // Parametrisoitu SELECT tarkistaa, onko omistaja jo olemassa puhelinnumeron perusteella.
+            // @Puhelin toimii paikkamerkkinä SQL-lauseessa.
+            // Tämä estää SQL-injektion ja varmistaa, että syöte käsitellään oikein.
+            var commandForOmistaja = connection.CreateCommand();
+            commandForOmistaja.CommandText = "SELECT Omistajan_id FROM Omistaja WHERE Puhelin = @Puhelin";
+            commandForOmistaja.Parameters.AddWithValue("@Puhelin", puhelin);
+
+            // ExecuteScalar palauttaa yhden arvon, tässä tapauksessa Omistajan_id:n tai null.
+            object? omistajanId = commandForOmistaja.ExecuteScalar();
+
+            if (omistajanId == null)
+            {
+                // Lisätään uusi omistaja, koska samaa puhelinnumeroa ei löydy.
+                var insertOmistajaCommand = connection.CreateCommand();
+                insertOmistajaCommand.CommandText = @"
+                    INSERT INTO Omistaja (Nimi, Puhelin, Osoite) VALUES (@Nimi, @Puhelin, @Osoite)";
+
+                // Parametrit liitetään paikkamerkkeihin SQL-lauseessa.
+                // Tämä tekee koodista turvallisemman ja käsittelee eri tietotyypit oikein.
+                insertOmistajaCommand.Parameters.AddWithValue("@Nimi", nimi);
+                insertOmistajaCommand.Parameters.AddWithValue("@Puhelin", puhelin);
+                insertOmistajaCommand.Parameters.AddWithValue("@Osoite", osoite);
+
+                insertOmistajaCommand.ExecuteNonQuery();
+
+                // Haetaan juuri lisätyn omistajan ID jatkokäyttöä varten.
+                commandForOmistaja.CommandText = "SELECT last_insert_rowid()";
+                omistajanId = commandForOmistaja.ExecuteScalar();
+
+                Console.WriteLine($"Omistajan nimi: {nimi} lisätty.");
+            }
+            else
+            {
+                Console.WriteLine($"Tällä puhelinnumerolla {puhelin} löytyy jo omistaja.");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Lisää lemmikin tietokantaan ja liittää sen olemassa olevaan omistajaan.
+    /// Käyttäjä valitsee omistajan ID:n listasta.
+    /// </summary>
+    public void AddPet()
+    {
+        using (var connection = new SqliteConnection(_connectionString))
+        {
+            connection.Open();
+
+            // Haetaan kaikki omistajat käyttäjän valintaa varten.
+            var selectOwners = connection.CreateCommand();
+            selectOwners.CommandText = "SELECT Omistajan_id, Nimi, Puhelin FROM Omistaja";
+
+            using (var reader = selectOwners.ExecuteReader())
+            {
+                Console.WriteLine("******* Omistajat ********");
+                while (reader.Read())
+                {
+                    int id = reader.GetInt32(0); // Omistajan yksilöllinen ID
+                    string nimi = reader.GetString(1); // Omistajan nimi
+                    string puhelin = reader.GetString(2); // Omistajan puhelin
+
+                    // Tulostetaan käyttäjälle luettava lista omistajista.
+                    Console.WriteLine($"Nimi: {nimi} - Puhelin: {puhelin} - ID: {id}");
+                }
+                Console.WriteLine("****************************\n");
+            }
+
+            Console.WriteLine("Anna omistajan ID, jolle haluat lisätä lemmikin:");
+            if (!int.TryParse(Console.ReadLine(), out int omistajanId))
+            {
+                Console.WriteLine("Virheellinen ID");
+                return;
+            }
+
+            Console.WriteLine("Anna lemmikin nimi:");
+            string? nimiLemmikki = Console.ReadLine();
+            Console.WriteLine("Anna lemmikin laji:");
+            string? laji = Console.ReadLine();
+
+            if (string.IsNullOrEmpty(nimiLemmikki) || string.IsNullOrEmpty(laji))
+            {
+                Console.WriteLine("Anna kaikki tiedot, kiitos.");
+                return;
+            }
+
+            // Lisätään lemmikki tietokantaan parametrisoidulla INSERT-lauseella.
+            var insertLemmikki = connection.CreateCommand();
+            insertLemmikki.CommandText = @"
+                INSERT INTO Lemmikki (Omistajan_id, Nimi, Laji)
+                VALUES (@Omistajan_id, @Nimi, @Laji)";
+
+            // Parametrien käyttö tekee koodista turvallista ja oikeaoppista.
+            insertLemmikki.Parameters.AddWithValue("@Omistajan_id", omistajanId);
+            insertLemmikki.Parameters.AddWithValue("@Nimi", nimiLemmikki);
+            insertLemmikki.Parameters.AddWithValue("@Laji", laji);
+
+            insertLemmikki.ExecuteNonQuery();
+
+            Console.WriteLine($"Lemmikki {nimiLemmikki} lisätty omistajalle ID: {omistajanId}!");
+        }
+    }
+
+    /// <summary>
+    /// Päivittää olemassa olevan omistajan puhelinnumeron.
+    /// Parametrit estävät SQL-injektion ja käsittelevät käyttäjän syötteen oikein.
+    /// </summary>
+    public void NewNumber()
+    {
+        using (var connection = new SqliteConnection(_connectionString))
+        {
+            connection.Open();
+
+            // Listataan kaikki omistajat käyttäjälle, jotta hän näkee ID:t.
+            var selectOwners = connection.CreateCommand();
+            selectOwners.CommandText = "SELECT Omistajan_id, Nimi, Puhelin FROM Omistaja";
+
+            using (var reader = selectOwners.ExecuteReader())
+            {
+                Console.WriteLine("******* Omistajat ********");
+                while (reader.Read())
+                {
+                    int id = reader.GetInt32(0);
+                    string nimi = reader.GetString(1);
+                    string puhelin = reader.GetString(2);
+
+                    Console.WriteLine($"Nimi: {nimi} - Puhelin: {puhelin} - ID: {id}");
+                }
+                Console.WriteLine("****************************\n");
+            }
+
+            Console.WriteLine("Anna vaihdettava puhelinnumero:");
+            string? VanhaNumero = Console.ReadLine();
+
+            Console.WriteLine("Anna uusi puhelinnumero:");
+            string? UusiNumero = Console.ReadLine();
+
+            if (string.IsNullOrEmpty(VanhaNumero) || string.IsNullOrEmpty(UusiNumero))
+            {
+                Console.WriteLine("Molempien puhelinnumerokenttien tulee olla täytetty.");
+                return;
+            }
+
+            // Tarkistetaan, löytyykö vanha numero tietokannasta.
+            var checkNumberCmd = connection.CreateCommand();
+            checkNumberCmd.CommandText = "SELECT COUNT(*) FROM Omistaja WHERE Puhelin = @Puhelin";
+            checkNumberCmd.Parameters.AddWithValue("@Puhelin", VanhaNumero);
+            int count = Convert.ToInt32(checkNumberCmd.ExecuteScalar());
+
+            if (count == 0)
+            {
+                Console.WriteLine($"Numeroa {VanhaNumero} ei löytynyt tietokannasta.");
+                return;
+            }
+
+            // Päivitetään puhelinnumero turvallisesti parametrien avulla.
+            var NewNumberCmd = connection.CreateCommand();
+            NewNumberCmd.CommandText = "UPDATE Omistaja SET Puhelin = @UusiNumero WHERE Puhelin = @VanhaNumero";
+            // @UusiNumero toimii paikkamerkkinä, joka korvataan UusiNumero-arvolla.
+            NewNumberCmd.Parameters.AddWithValue("@UusiNumero", UusiNumero);
+            // @VanhaNumero toimii paikkamerkkinä, joka korvataan VanhaNumero-arvolla.
+            NewNumberCmd.Parameters.AddWithValue("@VanhaNumero", VanhaNumero);
+
+            int affectedRows = NewNumberCmd.ExecuteNonQuery();
+
+            if (affectedRows > 0)
+            {
+                Console.WriteLine($"Numero {VanhaNumero} on vaihdettu onnistuneesti numeroksi {UusiNumero}.");
+            }
+            else
+            {
+                Console.WriteLine("Päivitys epäonnistui.");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Hakee ja tulostaa lemmikit annetun omistajan ID:n perusteella.
+    /// Parametrit estävät SQL-injektion ja käsittelevät käyttäjän syötteen oikein.
+    /// </summary>
+    public void SearchPet()
+    {
+        using (var connection = new SqliteConnection(_connectionString))
+        {
+            connection.Open();
+
+            // Listataan kaikki omistajat käyttäjälle, jotta ID:n valinta on helpompaa.
+            var selectOwners = connection.CreateCommand();
+            selectOwners.CommandText = "SELECT Omistajan_id, Nimi, Puhelin FROM Omistaja";
+
+            using (var reader = selectOwners.ExecuteReader())
+            {
+                Console.WriteLine("******* Omistajat ********");
+                while (reader.Read())
+                {
+                    int id = reader.GetInt32(0);
+                    string nimi = reader.GetString(1);
+                    string puhelin = reader.GetString(2);
+
+                    Console.WriteLine($"Nimi: {nimi} - Puhelin: {puhelin} - ID: {id}");
+                }
+                Console.WriteLine("****************************\n");
+            }
+
+            Console.WriteLine("Anna omistajan ID, jonka lemmikit haluat hakea:");
+            if (int.TryParse(Console.ReadLine(), out int omistajanId))
+            {
+                var selectPetsCmd = connection.CreateCommand();
+                selectPetsCmd.CommandText = "SELECT Nimi, Laji FROM Lemmikki WHERE Omistajan_id = @Omistajan_id";
+                selectPetsCmd.Parameters.AddWithValue("@Omistajan_id", omistajanId);
+
+                using (var petReader = selectPetsCmd.ExecuteReader())
+                {
+                    if (petReader.HasRows)
+                    {
+                        Console.WriteLine($"\nLemmikit omistajalle ID {omistajanId}:");
+                        while (petReader.Read())
+                        {
+                            string nimi = petReader.GetString(0);
+                            string laji = petReader.GetString(1);
+                            Console.WriteLine($"- {nimi}, laji: {laji}");
+                        }
+                    }
+                    else
+                    {
+                        Console.WriteLine("Lemmikkejä ei löytynyt tällä omistaja-ID:llä.");
+                    }
+                }
+            }
+            else
+            {
+                Console.WriteLine("Virheellinen ID. Anna kokonaisluku.");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Hakee omistajan puhelinnumeron lemmikin nimen perusteella.
+    /// Käyttää JOIN-lausetta yhdistämään Lemmikki- ja Omistaja-taulut.
+    /// Parametrien käyttö tekee hausta turvallisen.
+    /// </summary>
+    public void SearchOwner()
+    {
+        Console.WriteLine("Anna Lemmikin nimi, jolla haluat etsiä puhelin numeroa");
+        string? petName = Console.ReadLine();
+
+        if (string.IsNullOrEmpty(petName))
+        {
+            Console.WriteLine("Lemmikin nimi ei voi olla tyhjä");
+            return;
+        }
+
+        using (var connection = new SqliteConnection(_connectionString))
+        {
+            connection.Open();
+
+            var SearchOwner = connection.CreateCommand();
+            SearchOwner.CommandText = @"
+            SELECT Omistaja.Puhelin
+            FROM Lemmikki
+            JOIN Omistaja ON Lemmikki.Omistajan_id = Omistaja.Omistajan_id
+            WHERE Lemmikki.Nimi = @Nimi";
+
+            // @Nimi toimii paikkamerkkinä SQL-lauseessa, joka korvataan käyttäjän syötteellä.
+            SearchOwner.Parameters.AddWithValue("@Nimi", petName);
+
+            object? phoneNumber = SearchOwner.ExecuteScalar();
+
+            if (phoneNumber != null)
+            {
+                Console.WriteLine($"Omistajan puhelinnumero on: {phoneNumber}");
+            }
+            else
+            {
+                Console.WriteLine($"Lemmikkiä nimeltä {petName} ei löytynyt tietokannasta.");
+            }
+        }
+    }
+}
