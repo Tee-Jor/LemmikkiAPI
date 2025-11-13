@@ -2,6 +2,7 @@ using LemmikkiAPI;
 
 // Luo WebApplication builderin ja sovelluksen
 var builder = WebApplication.CreateBuilder(args);
+builder.WebHost.UseUrls("http://0.0.0.0:5000");
 var app = builder.Build();
 
 // Luodaan Asiakaskanta-olio, joka hallinnoi tietokantaa
@@ -56,6 +57,11 @@ app.MapPost("/lemmikki", (Lemmikki lemmikki) =>
 
     // Palautetaan lista kaikista lemmikeistä
     return Asiakaskanta.GetPets();
+});
+
+app.MapGet("/omistajat", () =>
+{
+    return Results.Ok(Asiakaskanta.GetOwners());
 });
 
 // Käynnistetään sovellus ja odotetaan HTTP-pyyntöjä
