@@ -312,11 +312,12 @@ public class Asiakaskanta
                 while (reader.Read())
                 {
                     var omistaja = new KaikkiOmistajat(
-                        reader.GetInt32(0),  // ID
-                        reader.GetString(1), // Nimi
-                        reader.GetString(2), // Puhelin
-                        reader.GetString(3)  // Osoite
+                    reader.GetInt32(0),  // ID
+                    reader.GetString(3), // Nimi
+                    reader.GetString(1), // Puhelin
+                    reader.GetString(2)  // Osoite
                     );
+
                     omistajat.Add(omistaja);
                 }
                 return omistajat;
